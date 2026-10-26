@@ -39,7 +39,7 @@ package() {
   cd mate-multimedia-control
   make DESTDIR="$pkgdir" install
 
-  # Recompile the GSettings schemas like the other MATE packages.
+  # gschemas.compiled belongs to the filesystem, not to this package:
+  # the glib pacman hook recompiles the schemas after the transaction.
   rm -f "$pkgdir/usr/share/glib-2.0/schemas/gschemas.compiled"
-  glib-compile-schemas "$pkgdir/usr/share/glib-2.0/schemas/"
 }
