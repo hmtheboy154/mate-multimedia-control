@@ -3,3 +3,28 @@ This is a MATE panel applet to control any media player compatible with mpris2.
 Requires:
  * MATE panel (GTK3, libmate-panel-applet)
  * playerctl: https://github.com/altdesktop/playerctl
+ * libsoup3: to download the album art published by remote players
+
+The applet shows previous, play/pause, stop and next buttons and binds
+to the first player detected on the session bus.
+
+The popup menu of the applet shows:
+
+ * "Now Playing": the artist and title of the current track of the
+   selected player, with its album art when enabled.
+ * "Players": a radio list with every player detected on the bus that
+   allows switching the player to control.
+
+The preferences dialog offers three switches (disabled by default):
+
+ * Show what is playing on other players: list the current track of
+   every detected player in the selection submenu.
+ * Show album art for the current player: display the album art of the
+   current track in the "Now Playing" entry.
+ * Show album art for the other players: display the album art of each
+   player in the selection submenu.
+
+The album art is read from the "mpris:artUrl" metadata published by
+the players. Local files are loaded directly, and remote artwork is
+downloaded with libsoup and cached under $XDG_CACHE_HOME/
+mate-multimedia-control/, so it is only downloaded once.

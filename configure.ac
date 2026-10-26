@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 AC_PREREQ([2.66])
-AC_INIT([mate-applet-multimedia-control], [0.1], [mati86dl@gmail.com])
+AC_INIT([mate-applet-multimedia-control], [0.2], [mati86dl@gmail.com])
 
 AM_INIT_AUTOMAKE([-Wall])
 
@@ -48,6 +48,14 @@ PKG_CHECK_MODULES([LIBMATEPANELAPPLET_4], [libmatepanelapplet-4.0], [LIBMATEPANE
 PKG_CHECK_MODULES([GTK], [gtk+-3.0])
 PKG_CHECK_MODULES([GLIB], [glib-2.0])
 PKG_CHECK_MODULES([PLAYERCTL], [playerctl])
+PKG_CHECK_MODULES([SOUP], [libsoup-3.0])
+
+# Translation support (used by the menu labels)
+GETTEXT_PACKAGE=mate-applet-multimedia-control
+AC_SUBST([GETTEXT_PACKAGE])
+AC_DEFINE([GETTEXT_PACKAGE], ["mate-applet-multimedia-control"], [Gettext package])
+
+GLIB_GSETTINGS
 
 # Makefiles
 MULTIMEDIA_CONTROL_FLAGS=`$PKG_CONFIG --cflags-only-I $LIBMATEPANELAPPLET playerctl`

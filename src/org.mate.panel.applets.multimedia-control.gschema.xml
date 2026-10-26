@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (C) 2014 matias <mati86dl@gmail.com>
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<schemalist>
+  <schema id="org.mate.panel.applets.multimedia-control" path="/org/mate/panel/applets/multimedia-control/">
+    <key name="show-other-players" type="b">
+      <default>false</default>
+      <summary>Show what is playing on other players</summary>
+      <description>List in the popup menu what the other detected players are playing, and not only the selected one.</description>
+    </key>
+    <key name="album-art-now-playing" type="b">
+      <default>false</default>
+      <summary>Show album art for the current player</summary>
+      <description>Show the album art of the current track in the "Now Playing" entry of the popup menu.</description>
+    </key>
+    <key name="album-art-other-players" type="b">
+      <default>false</default>
+      <summary>Show album art for the other players</summary>
+      <description>Show the album art of each player in the player selection submenu.</description>
+    </key>
+  </schema>
+</schemalist>
