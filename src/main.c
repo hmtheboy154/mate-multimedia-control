@@ -106,8 +106,26 @@ mc_truncate_text (const gchar *text, gsize max_chars)
 }
 
 /*
- * Text of the "Now Playing" entry: artist and title of the current
- * track, falling back to the player name.
+ * Text of the current track of an entry: artist and title, falling
+ * back to whatever the player reports.
+ */
+static gchar *
+entry_track_text (McPlayerEntry *entry)
+{
+	if (entry->artist != NULL && entry->title != NULL)
+		return g_strdup_printf ("%s — %s", entry->artist, entry->title);
+
+	if (entry->title != NULL)
+		return g_strdup (entry->title);
+
+	if (entry->artist != NULL)
+		return g_strdup (entry->artist);
+
+	return g_strdup (entry->name);
+}
+
+/*
+ * Text of the "Now Playing" entry of the selected player.
  */
 static gchar *
 applet_now_playing_text (MultimediaControlApplet *applet)
@@ -118,13 +136,7 @@ applet_now_playing_text (MultimediaControlApplet *applet)
 	if (entry == NULL)
 		return g_strdup (_("no player detected"));
 
-	if (entry->artist != NULL && entry->title != NULL)
-		text = g_strdup_printf ("%s — %s", entry->artist, entry->title);
-	else if (entry->title != NULL)
-		text = g_strdup (entry->title);
-	else
-		text = g_strdup (entry->name);
-
+	text = entry_track_text (entry);
 	truncated = mc_truncate_text (text, 48);
 	g_free (text);
 
@@ -404,17 +416,19 @@ applet_menu_players_rebuild (MultimediaControlApplet *applet)
 		gtk_widget_show_all (hbox);
 
 		/*
-		 * What is playing on the other players.
+		 * What is playing on the other players: keep the player
+		 * name visible and append its track.
 		 */
 		if (applet->show_other_players && entry != applet->selected) {
-			gchar *playing;
+			gchar *track, *playing;
 
-			if (entry->artist != NULL && entry->title != NULL)
-				playing = g_strdup_printf ("%s — %s", entry->artist, entry->title);
-			else if (entry->title != NULL)
-				playing = g_strdup (entry->title);
+			track = entry_track_text (entry);
+
+			if (g_strcmp0 (track, entry->name) != 0)
+				playing = g_strdup_printf ("%s - %s", entry->name, track);
 			else
 				playing = g_strdup (entry->name);
+			g_free (track);
 
 			text = mc_truncate_text (playing, 48);
 			g_free (playing);
@@ -655,6 +669,15 @@ applet_settings_sync (MultimediaControlApplet *applet)
 /*
  * About dialog.
  */
+static void
+about_response (GtkDialog               *dialog,
+                gint                     response_id,
+                MultimediaControlApplet *applet)
+{
+	gtk_widget_destroy (GTK_WIDGET (dialog));
+	applet->about_dialog = NULL;
+}
+
 void
 multimedia_control_about_show (GtkAction               *action,
                                MultimediaControlApplet *applet)
@@ -671,7 +694,10 @@ multimedia_control_about_show (GtkAction               *action,
 	}
 
 	applet->about_dialog = gtk_about_dialog_new ();
-	gtk_window_set_icon_name (GTK_WINDOW (applet->about_dialog), "multimedia-player");
+	gtk_window_set_icon_name (GTK_WINDOW (applet->about_dialog),
+	                          "multimedia-volume-control");
+	g_signal_connect (G_OBJECT (applet->about_dialog), "response",
+	                  G_CALLBACK (about_response), applet);
 	g_object_set (applet->about_dialog,
 	              "program-name", _("Multimedia Controls"),
 	              "version", PACKAGE_VERSION,
@@ -679,7 +705,7 @@ multimedia_control_about_show (GtkAction               *action,
 	              "comments", _("Control MPRIS2 compatible media players from the MATE panel"),
 	              "website", "https://github.com/hmtheboy154/mate-multimedia-control",
 	              "website-label", _("Multimedia Controls website"),
-	              "logo-icon-name", "multimedia-player",
+	              "logo-icon-name", "multimedia-volume-control",
 	              "license-type", GTK_LICENSE_GPL_3_0,
 	              "authors", authors,
 	              NULL);

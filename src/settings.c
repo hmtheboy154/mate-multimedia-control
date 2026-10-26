@@ -74,8 +74,8 @@ multimedia_control_preferences_show (MultimediaControlApplet *applet)
 	                                      GTK_DIALOG_DESTROY_WITH_PARENT,
 	                                      _("_Close"), GTK_RESPONSE_CLOSE,
 	                                      NULL);
-	gtk_window_set_icon_name (GTK_WINDOW (dialog), "multimedia-player");
-	gtk_window_set_resizable (GTK_WINDOW (dialog), FALSE);
+	gtk_window_set_icon_name (GTK_WINDOW (dialog), "multimedia-volume-control");
+	gtk_window_set_default_size (GTK_WINDOW (dialog), 400, -1);
 	g_signal_connect (G_OBJECT (dialog), "response",
 	                  G_CALLBACK (preferences_response), applet);
 	g_signal_connect (G_OBJECT (dialog), "destroy",
