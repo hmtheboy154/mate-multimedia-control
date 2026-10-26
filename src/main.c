@@ -16,106 +16,204 @@
 /*************************************************************************/
 
 #include <mate-panel-applet.h>
-#include <libmpris2client/libmpris2client.h>
-#include <libintl.h>
+#include <playerctl/playerctl.h>
 #include <string.h>
 
 #include "../config.h"
 #include "applet.h"
 
 /*
- * Mpris2
+ * Mpris2: playerctl backend
  */
 static void
-mpris2_button_prev (GtkWidget    *widget,
-                    Mpris2Client *mpris2)
+multimedia_control_applet_update (MultimediaControlApplet *applet)
 {
-	if (!mpris2_client_is_connected(mpris2))
-		return;
+	gboolean active = FALSE;
+	PlayerctlPlaybackStatus status = PLAYERCTL_PLAYBACK_STATUS_STOPPED;
+	const gchar *icon_name = "media-playback-start";
+	gchar *name = NULL;
 
-	mpris2_client_prev (mpris2);
-}
+	if (applet->player != NULL) {
+		g_object_get (applet->player,
+		              "playback-status", &status,
+		              "player-name", &name,
+		              NULL);
 
-static void
-mpris2_button_play_pause (GtkWidget    *widget,
-                          Mpris2Client *mpris2)
-{
-	if (!mpris2_client_is_connected(mpris2))
-		mpris2_client_auto_set_player (mpris2);
+		if (status != PLAYERCTL_PLAYBACK_STATUS_STOPPED)
+			active = TRUE;
 
-	mpris2_client_play_pause (mpris2);
-}
+		if (status == PLAYERCTL_PLAYBACK_STATUS_PLAYING)
+			icon_name = "media-playback-pause";
+	}
 
-static void
-mpris2_button_stop (GtkWidget    *widget,
-                    Mpris2Client *mpris2)
-{
-	if (!mpris2_client_is_connected(mpris2))
-		return;
+	gtk_widget_set_sensitive (applet->prev_button, active);
+	gtk_button_set_image (GTK_BUTTON(applet->play_button),
+	                      gtk_image_new_from_icon_name (icon_name,
+	                                                    GTK_ICON_SIZE_BUTTON));
+	gtk_widget_set_sensitive (applet->stop_button, active);
+	gtk_widget_set_sensitive (applet->next_button, active);
 
-	mpris2_client_stop (mpris2);
-}
-
-static void
-mpris2_button_next (GtkWidget    *widget,
-                    Mpris2Client *mpris2)
-{
-	if (!mpris2_client_is_connected(mpris2))
-		return;
-
-	mpris2_client_next (mpris2);
-}
-
-static void
-mpris2_connection (Mpris2Client            *mpris2,
-                   gboolean                 connected,
-                   MultimediaControlApplet *applet)
-{
 	gtk_widget_set_tooltip_text (GTK_WIDGET(applet->applet),
-	                             connected ?
-	                             mpris2_client_get_player_identity (mpris2) :
-	                             "Click to detect the player");
+	                             (name != NULL) ? name : "Click to detect the player");
+
+	g_free (name);
 }
 
 static void
-mpris2_playback_status (Mpris2Client            *mpris2,
-                        PlaybackStatus           playback_status,
+player_playback_status (PlayerctlPlayer         *player,
+                        PlayerctlPlaybackStatus  playback_status,
                         MultimediaControlApplet *applet)
 {
-	switch (playback_status) {
-		case PLAYING:
-			gtk_widget_set_sensitive (applet->prev_button, TRUE);
-			gtk_button_set_label (GTK_BUTTON(applet->play_button),
-			                      GTK_STOCK_MEDIA_PAUSE);
-			gtk_widget_set_sensitive (applet->stop_button, TRUE);
-			gtk_widget_set_sensitive (applet->next_button, TRUE);
-			break;
-		case PAUSED:
-			gtk_button_set_label (GTK_BUTTON(applet->play_button),
-			                      GTK_STOCK_MEDIA_PLAY);
-			break;
-		case STOPPED:
-		default:
-			gtk_widget_set_sensitive (applet->prev_button, FALSE);
-			gtk_button_set_label (GTK_BUTTON(applet->play_button),
-			                      GTK_STOCK_MEDIA_PLAY);
-			gtk_widget_set_sensitive (applet->stop_button, FALSE);
-			gtk_widget_set_sensitive (applet->next_button, FALSE);
+	multimedia_control_applet_update (applet);
+}
+
+static void
+multimedia_control_applet_bind_player (MultimediaControlApplet *applet,
+                                       PlayerctlPlayerName     *player_name)
+{
+	PlayerctlPlayer *player;
+	GError *error = NULL;
+
+	if (applet->player != NULL)
+		return;
+
+	player = playerctl_player_new_from_name (player_name, &error);
+	if (player == NULL) {
+		g_warning ("Could not connect to player '%s': %s",
+		           player_name->name != NULL ? player_name->name : "?",
+		           error->message);
+		g_error_free (error);
+		return;
+	}
+
+	playerctl_player_manager_manage_player (applet->manager, player);
+
+	g_signal_connect (G_OBJECT (player), "playback-status",
+	                  G_CALLBACK (player_playback_status), applet);
+
+	applet->player = player;
+
+	multimedia_control_applet_update (applet);
+}
+
+static void
+multimedia_control_applet_unbind_player (MultimediaControlApplet *applet)
+{
+	if (applet->player == NULL)
+		return;
+
+	g_signal_handlers_disconnect_by_func (G_OBJECT (applet->player),
+	                                      G_CALLBACK (player_playback_status),
+	                                      applet);
+
+	g_object_unref (applet->player);
+	applet->player = NULL;
+}
+
+static void
+multimedia_control_applet_bind_first_player (MultimediaControlApplet *applet)
+{
+	GList *names, *l;
+
+	if (applet->player != NULL)
+		return;
+
+	g_object_get (applet->manager, "player-names", &names, NULL);
+
+	for (l = names; l != NULL; l = l->next) {
+		multimedia_control_applet_bind_player (applet, l->data);
+		if (applet->player != NULL)
 			break;
 	}
+}
+
+static void
+manager_name_appeared (PlayerctlPlayerManager  *manager,
+                       PlayerctlPlayerName     *player_name,
+                       MultimediaControlApplet *applet)
+{
+	if (applet->player == NULL)
+		multimedia_control_applet_bind_player (applet, player_name);
+}
+
+static void
+manager_player_vanished (PlayerctlPlayerManager  *manager,
+                         PlayerctlPlayer         *player,
+                         MultimediaControlApplet *applet)
+{
+	if (player != applet->player)
+		return;
+
+	multimedia_control_applet_unbind_player (applet);
+
+	multimedia_control_applet_update (applet);
+	multimedia_control_applet_bind_first_player (applet);
+}
+
+static void
+player_button_prev (GtkWidget               *widget,
+                    MultimediaControlApplet *applet)
+{
+	if (applet->player == NULL)
+		return;
+
+	playerctl_player_previous (applet->player, NULL);
+}
+
+static void
+player_button_play_pause (GtkWidget               *widget,
+                          MultimediaControlApplet *applet)
+{
+	if (applet->player == NULL)
+		multimedia_control_applet_bind_first_player (applet);
+
+	if (applet->player == NULL)
+		return;
+
+	playerctl_player_play_pause (applet->player, NULL);
+}
+
+static void
+player_button_stop (GtkWidget               *widget,
+                    MultimediaControlApplet *applet)
+{
+	if (applet->player == NULL)
+		return;
+
+	playerctl_player_stop (applet->player, NULL);
+}
+
+static void
+player_button_next (GtkWidget               *widget,
+                    MultimediaControlApplet *applet)
+{
+	if (applet->player == NULL)
+		return;
+
+	playerctl_player_next (applet->player, NULL);
 }
 
 /*
  * Applet construction and signals.
  */
-
 static void
 applet_destroy (MatePanelApplet         *applet_widget,
                 MultimediaControlApplet *applet)
 {
-	g_assert(applet);
+	g_assert(applet != NULL);
 
-	g_object_unref (applet->mpris2);
+	multimedia_control_applet_unbind_player (applet);
+
+	if (applet->manager != NULL) {
+		g_signal_handlers_disconnect_by_func (G_OBJECT (applet->manager),
+		                                      G_CALLBACK (manager_name_appeared),
+		                                      applet);
+		g_signal_handlers_disconnect_by_func (G_OBJECT (applet->manager),
+		                                      G_CALLBACK (manager_player_vanished),
+		                                      applet);
+
+		g_object_unref (applet->manager);
+	}
 
 	g_free(applet);
 
@@ -129,6 +227,7 @@ multimedia_control_applet_factory (MatePanelApplet *applet_widget,
 {
 	MultimediaControlApplet *applet;
 	GtkWidget *box, *button;
+	GError *error = NULL;
 
 	if (strcmp (iid, APPLET_ID) != 0)
 		return FALSE;
@@ -140,45 +239,56 @@ multimedia_control_applet_factory (MatePanelApplet *applet_widget,
 	/*
 	 * Mpris2
 	 */
-	applet->mpris2 = mpris2_client_new ();
-	g_signal_connect (G_OBJECT (applet->mpris2), "connection",
-	                  G_CALLBACK(mpris2_connection), applet);
-	g_signal_connect (G_OBJECT (applet->mpris2), "playback-status",
-	                  G_CALLBACK(mpris2_playback_status), applet);
+	applet->manager = playerctl_player_manager_new (&error);
+	if (applet->manager == NULL) {
+		g_warning ("Could not create the player manager: %s", error->message);
+		g_error_free (error);
+		g_free (applet);
+		return FALSE;
+	}
+
+	g_signal_connect (G_OBJECT (applet->manager), "name-appeared",
+	                  G_CALLBACK(manager_name_appeared), applet);
+	g_signal_connect (G_OBJECT (applet->manager), "player-vanished",
+	                  G_CALLBACK(manager_player_vanished), applet);
 
 	/*
 	 * Widgets
 	 */
-	box = gtk_hbox_new(FALSE, 0);
+	box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
 
-	button = GTK_WIDGET(gtk_button_new_from_stock(GTK_STOCK_MEDIA_PREVIOUS));
+	button = GTK_WIDGET(gtk_button_new_from_icon_name ("media-skip-backward",
+	                                                   GTK_ICON_SIZE_BUTTON));
 	gtk_button_set_relief (GTK_BUTTON(button), GTK_RELIEF_NONE);
 	g_signal_connect (G_OBJECT(button), "clicked",
-	                  G_CALLBACK(mpris2_button_prev), applet->mpris2);
+	                  G_CALLBACK(player_button_prev), applet);
 	gtk_box_pack_start (GTK_BOX(box), GTK_WIDGET(button),
 	                    FALSE, FALSE, 0);
 	applet->prev_button = button;
 
-	button = GTK_WIDGET(gtk_button_new_from_stock(GTK_STOCK_MEDIA_PLAY));
+	button = GTK_WIDGET(gtk_button_new_from_icon_name ("media-playback-start",
+	                                                   GTK_ICON_SIZE_BUTTON));
 	gtk_button_set_relief (GTK_BUTTON(button), GTK_RELIEF_NONE);
 	g_signal_connect (G_OBJECT(button), "clicked",
-	                  G_CALLBACK(mpris2_button_play_pause), applet->mpris2);
+	                  G_CALLBACK(player_button_play_pause), applet);
 	gtk_box_pack_start (GTK_BOX(box), GTK_WIDGET(button),
 	                    FALSE, FALSE, 0);
 	applet->play_button = button;
 
-	button = GTK_WIDGET(gtk_button_new_from_stock(GTK_STOCK_MEDIA_STOP));
+	button = GTK_WIDGET(gtk_button_new_from_icon_name ("media-playback-stop",
+	                                                   GTK_ICON_SIZE_BUTTON));
 	gtk_button_set_relief (GTK_BUTTON(button), GTK_RELIEF_NONE);
 	g_signal_connect (G_OBJECT(button), "clicked",
-	                  G_CALLBACK(mpris2_button_stop), applet->mpris2);
+	                  G_CALLBACK(player_button_stop), applet);
 	gtk_box_pack_start (GTK_BOX(box), GTK_WIDGET(button),
 	                    FALSE, FALSE, 0);
 	applet->stop_button = button;
 
-	button = GTK_WIDGET(gtk_button_new_from_stock(GTK_STOCK_MEDIA_NEXT));
+	button = GTK_WIDGET(gtk_button_new_from_icon_name ("media-skip-forward",
+	                                                   GTK_ICON_SIZE_BUTTON));
 	gtk_button_set_relief (GTK_BUTTON(button), GTK_RELIEF_NONE);
 	g_signal_connect (G_OBJECT(button), "clicked",
-	                  G_CALLBACK(mpris2_button_next), applet->mpris2);
+	                  G_CALLBACK(player_button_next), applet);
 	gtk_box_pack_start (GTK_BOX(box), GTK_WIDGET(button),
 	                    FALSE, FALSE, 0);
 	applet->next_button = button;
@@ -191,16 +301,11 @@ multimedia_control_applet_factory (MatePanelApplet *applet_widget,
 	gtk_widget_show_all(GTK_WIDGET(applet_widget));
 
 	/*
-	 * Check if a player is running and upate.
+	 * Check if a player is running and update.
 	 */
-	mpris2_client_auto_set_player (applet->mpris2);
+	multimedia_control_applet_bind_first_player (applet);
 
-	mpris2_connection (applet->mpris2,
-	                   mpris2_client_is_connected(applet->mpris2),
-	                   applet);
-	mpris2_playback_status (applet->mpris2,
-	                        mpris2_client_get_playback_status(applet->mpris2),
-	                        applet);
+	multimedia_control_applet_update (applet);
 
 	return TRUE;
 }

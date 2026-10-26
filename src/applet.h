@@ -15,17 +15,27 @@
 /* along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 /*************************************************************************/
 
+#ifndef __MULTIMEDIA_CONTROL_APPLET_H__
+#define __MULTIMEDIA_CONTROL_APPLET_H__
+
+#include <gtk/gtk.h>
+#include <mate-panel-applet.h>
+#include <playerctl/playerctl.h>
+
 #define APPLET_FACTORY "MultimediaControlAppletFactory"
 #define APPLET_ID "MultimediaControlApplet"
 #define APPLET_NAME "multimedia-control"
 
 typedef struct {
-	MatePanelApplet *applet;
+	MatePanelApplet        *applet;
 
-	Mpris2Client    *mpris2;
+	PlayerctlPlayerManager *manager;
+	PlayerctlPlayer        *player;
 
-	GtkWidget       *prev_button;
-	GtkWidget       *play_button;
-	GtkWidget       *stop_button;
-	GtkWidget       *next_button;
+	GtkWidget              *prev_button;
+	GtkWidget              *play_button;
+	GtkWidget              *stop_button;
+	GtkWidget              *next_button;
 } MultimediaControlApplet;
+
+#endif /* __MULTIMEDIA_CONTROL_APPLET_H__ */

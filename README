@@ -1,4 +1,5 @@
 This is a MATE panel applet to control any media player compatible with mpris2.
 
-Depends on the library:
- https://github.com/matiasdelellis/libmpris2client
+Requires:
+ * MATE panel (GTK3, libmate-panel-applet)
+ * playerctl: https://github.com/altdesktop/playerctl

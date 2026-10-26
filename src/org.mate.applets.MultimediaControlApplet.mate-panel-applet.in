@@ -6,5 +6,5 @@ Name=Multimedia Controls
 [MultimediaControlApplet]
 Name=Multimedia Controls
 Description=Control players compatible with mpris2
-Icon=multimedia-control-applet
+Icon=multimedia-player
 MateComponentId=OAFIID:MATE_MultimediaControlApplet
