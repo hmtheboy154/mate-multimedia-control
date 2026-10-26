@@ -1,0 +1,40 @@
+# Maintainer: hmtheboy154 <buingoc67@gmail.com>
+# Contributor: Matias De Lellis <mati86dl@gmail.com>
+
+pkgname=mate-applet-multimedia-control
+pkgver=0.1
+pkgrel=2
+pkgdesc="MATE panel applet to control media players compatible with MPRIS2"
+arch=(x86_64)
+url='https://github.com/hmtheboy154/mate-multimedia-control'
+license=(GPL-3.0-or-later)
+depends=(
+  glib2
+  gtk3
+  mate-panel
+  playerctl
+)
+makedepends=(git)
+source=("git+https://github.com/hmtheboy154/mate-multimedia-control.git#commit=1a165cc10f01e2dc65cd6cc9b054b10872dae713")
+b2sums=('SKIP')
+
+prepare() {
+  cd mate-multimedia-control
+
+  autoreconf -fiv
+}
+
+build() {
+  cd mate-multimedia-control
+  ./configure \
+    --prefix=/usr \
+    --libexecdir=/usr/lib \
+    --sysconfdir=/etc \
+    --localstatedir=/var
+  make
+}
+
+package() {
+  cd mate-multimedia-control
+  make DESTDIR="$pkgdir" install
+}

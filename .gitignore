@@ -34,3 +34,6 @@ packaging/pkg/
 packaging/*.tar.zst
 packaging/*.tar.gz
 packaging/*.sig
+
+# makepkg artifact when building from packaging/
+packaging/mate-multimedia-control/
