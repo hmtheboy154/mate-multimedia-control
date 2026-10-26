@@ -1,0 +1,36 @@
+# Autotools
+autom4te.cache/
+aclocal.m4
+configure
+configure~
+config.h
+config.h.in
+config.h.in~
+config.log
+config.status
+config.status.lineno
+stamp-h1
+Makefile
+Makefile.in
+.deps/
+.dirstamp
+
+# Compiler output
+*.o
+*.lo
+*.la
+.libs/
+
+# Build outputs
+src/multimedia-control-applet
+
+# Generated applet and D-Bus service files
+src/*.mate-panel-applet
+src/*.service
+
+# Packaging (makepkg)
+packaging/src/
+packaging/pkg/
+packaging/*.tar.zst
+packaging/*.tar.gz
+packaging/*.sig
