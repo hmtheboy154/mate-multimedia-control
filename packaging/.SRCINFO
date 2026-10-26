@@ -1,16 +1,17 @@
 pkgbase = mate-applet-multimedia-control
 	pkgdesc = MATE panel applet to control media players compatible with MPRIS2
-	pkgver = 0.1
-	pkgrel = 2
+	pkgver = 0.2
+	pkgrel = 1
 	url = https://github.com/hmtheboy154/mate-multimedia-control
 	arch = x86_64
 	license = GPL-3.0-or-later
 	makedepends = git
 	depends = glib2
 	depends = gtk3
+	depends = libsoup3
 	depends = mate-panel
 	depends = playerctl
-	source = git+https://github.com/hmtheboy154/mate-multimedia-control.git#commit=1a165cc10f01e2dc65cd6cc9b054b10872dae713
+	source = git+https://github.com/hmtheboy154/mate-multimedia-control.git#commit=643ecc021f4bc168e3bf6e4528fb27c18d33f88e
 	b2sums = SKIP
 
 pkgname = mate-applet-multimedia-control

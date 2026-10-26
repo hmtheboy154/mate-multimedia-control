@@ -2,8 +2,8 @@
 # Contributor: Matias De Lellis <mati86dl@gmail.com>
 
 pkgname=mate-applet-multimedia-control
-pkgver=0.1
-pkgrel=2
+pkgver=0.2
+pkgrel=1
 pkgdesc="MATE panel applet to control media players compatible with MPRIS2"
 arch=(x86_64)
 url='https://github.com/hmtheboy154/mate-multimedia-control'
@@ -11,11 +11,12 @@ license=(GPL-3.0-or-later)
 depends=(
   glib2
   gtk3
+  libsoup3
   mate-panel
   playerctl
 )
 makedepends=(git)
-source=("git+https://github.com/hmtheboy154/mate-multimedia-control.git#commit=1a165cc10f01e2dc65cd6cc9b054b10872dae713")
+source=("git+https://github.com/hmtheboy154/mate-multimedia-control.git#commit=643ecc021f4bc168e3bf6e4528fb27c18d33f88e")
 b2sums=('SKIP')
 
 prepare() {
@@ -37,4 +38,8 @@ build() {
 package() {
   cd mate-multimedia-control
   make DESTDIR="$pkgdir" install
+
+  # Recompile the GSettings schemas like the other MATE packages.
+  rm -f "$pkgdir/usr/share/glib-2.0/schemas/gschemas.compiled"
+  glib-compile-schemas "$pkgdir/usr/share/glib-2.0/schemas/"
 }
