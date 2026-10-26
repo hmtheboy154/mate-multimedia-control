@@ -47,6 +47,7 @@ PKG_CHECK_MODULES([LIBMATEPANELAPPLET_4], [libmatepanelapplet-4.0], [LIBMATEPANE
 ### Check for packages
 PKG_CHECK_MODULES([GTK], [gtk+-3.0])
 PKG_CHECK_MODULES([GLIB], [glib-2.0])
+PKG_CHECK_MODULES([X11], [x11 xi])
 PKG_CHECK_MODULES([PLAYERCTL], [playerctl])
 PKG_CHECK_MODULES([SOUP], [libsoup-3.0])
 

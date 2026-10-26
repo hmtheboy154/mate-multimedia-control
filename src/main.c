@@ -19,6 +19,10 @@
 #include <glib/gi18n.h>
 #include <string.h>
 
+#include <gdk/gdkx.h>
+#include <X11/Xlib.h>
+#include <X11/extensions/XInput2.h>
+
 #include "../config.h"
 #include "applet.h"
 #include "art.h"
@@ -51,6 +55,8 @@ static void applet_select_player        (MultimediaControlApplet *applet,
                                          McPlayerEntry           *entry);
 static void multimedia_control_about_show (GtkAction               *action,
                                            MultimediaControlApplet *applet);
+static void applet_media_keys_take      (MultimediaControlApplet *applet);
+static void applet_media_keys_release   (MultimediaControlApplet *applet);
 
 static void
 preferences_activated (GtkAction               *action,
@@ -192,7 +198,6 @@ entry_request_art (McPlayerEntry *entry)
 static void
 player_entry_refresh_metadata (McPlayerEntry *entry)
 {
-	GVariant *metadata;
 	gchar *title, *artist, *art_url;
 	GError *error = NULL;
 
@@ -208,11 +213,16 @@ player_entry_refresh_metadata (McPlayerEntry *entry)
 		g_error_free (error);
 	}
 
-	art_url = NULL;
-	g_object_get (entry->player, "metadata", &metadata, NULL);
-	if (metadata != NULL) {
-		g_variant_lookup (metadata, "mpris:artUrl", "s", &art_url);
-		g_variant_unref (metadata);
+	/*
+	 * The metadata of a player that is going away cannot be read
+	 * with g_object_get(): playerctl aborts the program on that
+	 * error. Use the api that reports errors instead.
+	 */
+	art_url = playerctl_player_print_metadata_prop (entry->player,
+	                                                "mpris:artUrl", &error);
+	if (error != NULL) {
+		g_debug ("Could not read the album art url: %s", error->message);
+		g_error_free (error);
 	}
 
 	if (g_strcmp0 (art_url, entry->art_url) != 0) {
@@ -525,6 +535,19 @@ applet_add_player (MultimediaControlApplet *applet,
 	McPlayerEntry *entry;
 	PlayerctlPlayer *player;
 	GError *error = NULL;
+	GList *l;
+
+	/*
+	 * Players like audacious flicker their MPRIS name while
+	 * starting up; skip the entry when it is already tracked.
+	 */
+	for (l = applet->players; l != NULL; l = l->next) {
+		McPlayerEntry *old = MC_PLAYER_ENTRY (l->data);
+
+		if (g_strcmp0 (old->name, player_name->name) == 0 &&
+		    g_strcmp0 (old->instance, player_name->instance) == 0)
+			return;
+	}
 
 	player = playerctl_player_new_from_name (player_name, &error);
 	if (player == NULL) {
@@ -599,6 +622,224 @@ manager_player_vanished (PlayerctlPlayerManager  *manager,
 	applet_update_buttons (applet);
 	applet_menu_refresh (applet);
 	applet_menu_players_rebuild (applet);
+}
+
+/*
+ * Media keys.
+ *
+ * The session daemon forwards the multimedia keys to the player that
+ * appeared last, which is rarely the one the user chose to control.
+ * So we take the keys over and forward them to the player selected in
+ * the applet instead, with a passive grab of the XInput2 extension:
+ * it lives beside the core grabs of the session daemon, and while it
+ * is active the core delivery of the keys is suspended. When the
+ * applet goes away, the keys fall back to the session daemon again.
+ */
+typedef void (*McPlayerCommand) (PlayerctlPlayer *player, GError **error);
+
+static const struct {
+	const gchar     *key;
+	McPlayerCommand  command;
+} applet_media_keys[] = {
+	{ "XF86AudioPlay",     playerctl_player_play_pause },
+	{ "XF86AudioPause",    playerctl_player_pause      },
+	{ "XF86AudioStop",     playerctl_player_stop       },
+	{ "XF86AudioNext",     playerctl_player_next       },
+	{ "XF86AudioPrevious", playerctl_player_previous   },
+};
+
+static int  applet_xi_opcode      = -1;
+static gboolean applet_xi_ready   = FALSE;
+static gboolean applet_xi_filter  = FALSE;
+static KeyCode applet_xi_keys[G_N_ELEMENTS (applet_media_keys)];
+static GSList *applet_media_key_instances = NULL;
+static guint applet_media_key_refs = 0;
+
+/*
+ * Swallow the errors of our grabs: the keys may be gone or taken by
+ * another client at any time, and GDK would bring the applet down for
+ * that.
+ */
+static int
+applet_x_error_ignore (Display *display, XErrorEvent *error)
+{
+	return 0;
+}
+
+static void
+applet_media_key_forward (MultimediaControlApplet *applet,
+                          KeyCode                  keycode)
+{
+	guint i;
+
+	if (applet->selected == NULL || applet->selected->player == NULL)
+		return;
+
+	for (i = 0; i < G_N_ELEMENTS (applet_media_keys); i++) {
+		GError *error = NULL;
+
+		if (applet_xi_keys[i] != keycode)
+			continue;
+
+		applet_media_keys[i].command (applet->selected->player, &error);
+		if (error != NULL) {
+			g_warning ("Could not send '%s' to the player: %s",
+			           applet_media_keys[i].key, error->message);
+			g_error_free (error);
+		}
+		return;
+	}
+}
+
+static GdkFilterReturn
+applet_media_key_filter (GdkXEvent *gxevent,
+                         GdkEvent  *event,
+                         gpointer   data)
+{
+	MultimediaControlApplet *applet = (applet_media_key_instances != NULL) ?
+	                                   applet_media_key_instances->data : NULL;
+	Display *display;
+	XEvent *xevent = (XEvent *) gxevent;
+
+	if (applet == NULL)
+		return GDK_FILTER_CONTINUE;
+
+	display = gdk_x11_display_get_xdisplay (gdk_display_get_default ());
+
+	if (xevent->type == MappingNotify &&
+	    xevent->xmapping.request == MappingKeyboard) {
+		/*
+		 * The keyboard map changed; take the keys again, with
+		 * the keycodes of the new map.
+		 */
+		applet_media_keys_release (applet);
+		applet_media_keys_take (applet);
+		return GDK_FILTER_CONTINUE;
+	}
+
+	if (!applet_xi_ready ||
+	    xevent->type != GenericEvent ||
+	    xevent->xgeneric.extension != applet_xi_opcode)
+		return GDK_FILTER_CONTINUE;
+
+	if (xevent->xcookie.evtype == XI_KeyPress) {
+		XIDeviceEvent *device_event;
+
+		XGetEventData (display, &xevent->xcookie);
+		device_event = (XIDeviceEvent *) xevent->xcookie.data;
+		if (device_event != NULL)
+			applet_media_key_forward (applet, (KeyCode) device_event->detail);
+		XFreeEventData (display, &xevent->xcookie);
+
+		return GDK_FILTER_REMOVE;
+	}
+
+	return GDK_FILTER_CONTINUE;
+}
+
+static void
+applet_media_keys_release (MultimediaControlApplet *applet)
+{
+	Display *display;
+	Window root;
+	static const guint masks[] = { 0, LockMask, Mod2Mask, LockMask | Mod2Mask };
+	XErrorHandler handler;
+	guint i, j;
+
+	if (!applet_xi_ready)
+		return;
+
+	display = gdk_x11_display_get_xdisplay (gdk_display_get_default ());
+	root = gdk_x11_window_get_xid (gdk_get_default_root_window ());
+
+	handler = XSetErrorHandler (applet_x_error_ignore);
+
+	for (i = 0; i < G_N_ELEMENTS (applet_media_keys); i++) {
+		if (applet_xi_keys[i] == 0)
+			continue;
+
+		for (j = 0; j < G_N_ELEMENTS (masks); j++) {
+			XIGrabModifiers modifiers;
+
+			modifiers.modifiers = masks[j];
+			modifiers.status = 0;
+
+			XIUngrabKeycode (display, XIAllMasterDevices, applet_xi_keys[i],
+			                 root, 1, &modifiers);
+		}
+
+		applet_xi_keys[i] = 0;
+	}
+
+	XFlush (display);
+	XSetErrorHandler (handler);
+}
+
+static void
+applet_media_keys_take (MultimediaControlApplet *applet)
+{
+	Display *display;
+	Window root;
+	static const guint masks[] = { 0, LockMask, Mod2Mask, LockMask | Mod2Mask };
+	XErrorHandler handler;
+	guint i, j;
+
+	display = gdk_x11_display_get_xdisplay (gdk_display_get_default ());
+
+	if (!applet_xi_ready) {
+		int event, error;
+		int major = 2, minor = 2;
+
+		if (XQueryExtension (display, "XInputExtension",
+		                     &applet_xi_opcode, &event, &error) &&
+		    XIQueryVersion (display, &major, &minor) == Success)
+			applet_xi_ready = TRUE;
+		else
+			return;
+	}
+
+	root = gdk_x11_window_get_xid (gdk_get_default_root_window ());
+	handler = XSetErrorHandler (applet_x_error_ignore);
+
+	for (i = 0; i < G_N_ELEMENTS (applet_media_keys); i++) {
+		KeyCode keycode;
+		unsigned char bits[XIMaskLen (XI_KeyPress)];
+		XIEventMask mask;
+
+		applet_xi_keys[i] = 0;
+
+		keycode = XKeysymToKeycode (display,
+		                            XStringToKeysym (applet_media_keys[i].key));
+		if (keycode == 0)
+			continue;
+
+		memset (bits, 0, sizeof (bits));
+		XISetMask (bits, XI_KeyPress);
+		mask.deviceid = XIAllMasterDevices;
+		mask.mask_len = sizeof (bits);
+		mask.mask = bits;
+
+		for (j = 0; j < G_N_ELEMENTS (masks); j++) {
+			XIGrabModifiers modifiers;
+
+			modifiers.modifiers = masks[j];
+			modifiers.status = 0;
+
+			XIGrabKeycode (display, XIAllMasterDevices, keycode, root,
+			               XIGrabModeAsync, XIGrabModeAsync, FALSE,
+			               &mask, 1, &modifiers);
+		}
+
+		applet_xi_keys[i] = keycode;
+	}
+
+	XFlush (display);
+	XSetErrorHandler (handler);
+
+	if (!applet_xi_filter) {
+		gdk_window_add_filter (NULL, applet_media_key_filter, applet);
+		applet_xi_filter = TRUE;
+	}
 }
 
 /*
@@ -814,6 +1055,19 @@ applet_destroy (MatePanelApplet         *applet_widget,
 	g_assert (applet != NULL);
 
 	/*
+	 * Give the multimedia keys of the session back.
+	 */
+	applet_media_key_instances = g_slist_remove (applet_media_key_instances,
+	                                             applet);
+	if (applet_media_key_refs > 0 && --applet_media_key_refs == 0) {
+		applet_media_keys_release (applet);
+		if (applet_xi_filter) {
+			gdk_window_remove_filter (NULL, applet_media_key_filter, applet);
+			applet_xi_filter = FALSE;
+		}
+	}
+
+	/*
 	 * Close the preferences and about dialogs if they are open.
 	 */
 	if (applet->preferences_dialog != NULL)
@@ -948,6 +1202,16 @@ multimedia_control_applet_factory (MatePanelApplet *applet_widget,
 	                              G_N_ELEMENTS (applet_menu_actions), applet);
 
 	applet_setup_menu (applet);
+
+	/*
+	 * Take over the multimedia keys of the session. The grabs are
+	 * owned by the whole process, so the first applet takes them
+	 * and the last one gives them back.
+	 */
+	applet_media_key_instances = g_slist_prepend (applet_media_key_instances,
+	                                              applet);
+	if (applet_media_key_refs++ == 0)
+		applet_media_keys_take (applet);
 
 	g_signal_connect (G_OBJECT (applet_widget), "destroy",
 	                  G_CALLBACK (applet_destroy), (gpointer) applet);
