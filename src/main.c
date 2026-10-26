@@ -60,9 +60,9 @@ preferences_activated (GtkAction               *action,
 }
 
 static const GtkActionEntry applet_menu_actions[] = {
-	{ "Preferences", NULL, N_("_Preferences"), NULL, NULL,
+	{ "Preferences", GTK_STOCK_PREFERENCES, N_("_Preferences"), NULL, NULL,
 	  G_CALLBACK (preferences_activated) },
-	{ "About", NULL, N_("_About"), NULL, NULL,
+	{ "About", GTK_STOCK_ABOUT, N_("_About"), NULL, NULL,
 	  G_CALLBACK (multimedia_control_about_show) },
 };
 
@@ -695,7 +695,7 @@ multimedia_control_about_show (GtkAction               *action,
 
 	applet->about_dialog = gtk_about_dialog_new ();
 	gtk_window_set_icon_name (GTK_WINDOW (applet->about_dialog),
-	                          "multimedia-volume-control");
+	                          "multimedia-player");
 	g_signal_connect (G_OBJECT (applet->about_dialog), "response",
 	                  G_CALLBACK (about_response), applet);
 	g_object_set (applet->about_dialog,
@@ -705,7 +705,7 @@ multimedia_control_about_show (GtkAction               *action,
 	              "comments", _("Control MPRIS2 compatible media players from the MATE panel"),
 	              "website", "https://github.com/hmtheboy154/mate-multimedia-control",
 	              "website-label", _("Multimedia Controls website"),
-	              "logo-icon-name", "multimedia-volume-control",
+	              "logo-icon-name", "multimedia-player",
 	              "license-type", GTK_LICENSE_GPL_3_0,
 	              "authors", authors,
 	              NULL);
@@ -713,6 +713,23 @@ multimedia_control_about_show (GtkAction               *action,
 	                  G_CALLBACK (gtk_widget_destroyed), &applet->about_dialog);
 
 	gtk_widget_show (applet->about_dialog);
+}
+
+/*
+ * Show the image of a menu entry: the ui manager only displays
+ * menu images when they are explicitly enabled.
+ */
+static void
+applet_menu_item_keep_image (GtkAction *action)
+{
+	GSList *proxies;
+
+	proxies = gtk_action_get_proxies (action);
+	if (proxies == NULL || !GTK_IS_IMAGE_MENU_ITEM (proxies->data))
+		return;
+
+	gtk_image_menu_item_set_always_show_image (GTK_IMAGE_MENU_ITEM (proxies->data),
+	                                           TRUE);
 }
 
 /*
@@ -776,6 +793,15 @@ applet_setup_menu (MultimediaControlApplet *applet)
 		item = GTK_WIDGET (proxies->data);
 		applet->players_menu = gtk_menu_item_get_submenu (GTK_MENU_ITEM (item));
 	}
+
+	/*
+	 * The "Preferences" and "About" entries show their stock
+	 * icon, like the menus of the other MATE applets.
+	 */
+	applet_menu_item_keep_image (gtk_action_group_get_action (
+			applet->action_group, "Preferences"));
+	applet_menu_item_keep_image (gtk_action_group_get_action (
+			applet->action_group, "About"));
 }
 
 /*
